@@ -1,0 +1,62 @@
+# 決済まわりの設定・データフローまとめ
+
+## Stripe連携の全体像
+
+1. **プラン選択・申込**
+   - ユーザーがアプリのプラン画面で「Proプラン」などを選択
+   - `handlePlanChange`サーバーアクションが呼ばれる
+
+2. **Stripe顧客IDの作成・保存**
+   - `user_profiles.stripe_customer_id`が無い場合、Edge Function（`create-stripe-customer`）でStripe Customerを作成
+   - そのIDをSupabaseの`user_profiles`に保存
+
+3. **Checkoutセッションの作成**
+   - Edge Function（`create-checkout-session`）でStripeのCheckout Sessionを作成
+   - 返ってきたURLにリダイレクトし、Stripeの決済画面へ遷移
+
+4. **決済完了後のリダイレクト**
+   - 決済が完了すると、`/plan/success`ページにリダイレクト
+
+5. **プラン自動更新（Webhook）**
+   - StripeのWebhook（`checkout.session.completed`）をSupabase Edge Function（`stripe-webhook`）で受信
+   - Webhookイベントから`customerId`を取得し、Supabaseの`user_profiles.plan`を`pro`に自動更新
+
+---
+
+## 必要な環境変数（Secrets）
+- `STRIPE_SECRET_KEY` : Stripeのシークレットキー（sk_test_.../sk_live_...）
+- `STRIPE_WEBHOOK_SECRET` : Stripe Webhook登録時に発行される署名シークレット（whsec_...）
+- `SUPABASE_URL` : SupabaseプロジェクトのURL
+- `SUPABASE_SERVICE_ROLE_KEY` : Supabaseのサービスロールキー
+
+---
+
+## Stripeダッシュボードの設定
+- Product/Price（プラン）を作成し、Price ID（price_...）を控える
+- WebhookエンドポイントにSupabase Edge FunctionのURLを登録
+  - 例: `https://<プロジェクトref>.supabase.co/functions/v1/stripe-webhook`
+  - イベントタイプは `checkout.session.completed` を選択
+
+---
+
+## データベース設計
+- `user_profiles` 
+  - `id` : ユーザーID（Supabase AuthのIDと一致）
+  - `plan` : 現在のプラン（ 'free', 'pro'）
+  - `stripe_customer_id` : StripeのCustomer ID
+
+---
+
+## よくあるトラブル
+- Secrets（環境変数）の未設定・再デプロイ忘れ
+- Edge FunctionのJWT検証ONでWebhookが401になる
+- Stripe Webhook Secretの未設定
+---
+
+## TODO
+- 解約やダウングレード対応
+- Webhookで他のイベントも処理？
+- 本番運用時は`sk_live_...`に切り替える
+- UI/UXの改善や通知機能
+
+---

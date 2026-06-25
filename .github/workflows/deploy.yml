@@ -1,0 +1,119 @@
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Build and deploy
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure production environment variables
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BASIC_AUTH_USER: ${{ secrets.BASIC_AUTH_USER }}
+          BASIC_AUTH_PASSWORD: ${{ secrets.BASIC_AUTH_PASSWORD }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GITHUB_CLIENT_ID: ${{ secrets.GITHUB_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.GITHUB_CLIENT_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          OPENAI_WORKER_URL: ${{ secrets.OPENAI_WORKER_URL }}
+          VOICEVOX_API_URL: ${{ secrets.VOICEVOX_API_URL }}
+          VIDEO_RENDER_API_URL: ${{ secrets.VIDEO_RENDER_API_URL }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_ROOT_URL: ${{ secrets.NEXT_PUBLIC_ROOT_URL }}
+        run: |
+          jq -n \
+            --arg basicAuthUser "$BASIC_AUTH_USER" \
+            --arg basicAuthPassword "$BASIC_AUTH_PASSWORD" \
+            --arg googleApiKey "$GOOGLE_API_KEY" \
+            --arg githubClientId "$GITHUB_CLIENT_ID" \
+            --arg githubClientSecret "$GITHUB_CLIENT_SECRET" \
+            --arg googleClientId "$GOOGLE_CLIENT_ID" \
+            --arg googleClientSecret "$GOOGLE_CLIENT_SECRET" \
+            --arg openaiWorkerUrl "$OPENAI_WORKER_URL" \
+            --arg voicevoxApiUrl "$VOICEVOX_API_URL" \
+            --arg videoRenderApiUrl "$VIDEO_RENDER_API_URL" \
+            --arg r2Endpoint "$R2_ENDPOINT" \
+            --arg r2AccessKeyId "$R2_ACCESS_KEY_ID" \
+            --arg r2SecretAccessKey "$R2_SECRET_ACCESS_KEY" \
+            --arg awsAccessKeyId "$AWS_ACCESS_KEY_ID" \
+            --arg awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" \
+            --arg supabaseUrl "$NEXT_PUBLIC_SUPABASE_URL" \
+            --arg supabaseAnonKey "$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
+            --arg rootUrl "$NEXT_PUBLIC_ROOT_URL" \
+            '{
+              deployment_configs: {
+                production: {
+                  env_vars: {
+                    BASIC_AUTH_ENABLED: { type: "plain_text", value: "true" },
+                    BASIC_AUTH_USER: { type: "plain_text", value: $basicAuthUser },
+                    BASIC_AUTH_PASSWORD: { type: "secret_text", value: $basicAuthPassword },
+                    GEMINI_MODEL: { type: "plain_text", value: "gemini-2.5-flash" },
+                    AWS_REGION: { type: "plain_text", value: "us-east-1" },
+                    GOOGLE_API_KEY: { type: "secret_text", value: $googleApiKey },
+                    GITHUB_CLIENT_ID: { type: "plain_text", value: $githubClientId },
+                    GITHUB_CLIENT_SECRET: { type: "secret_text", value: $githubClientSecret },
+                    GOOGLE_CLIENT_ID: { type: "plain_text", value: $googleClientId },
+                    GOOGLE_CLIENT_SECRET: { type: "secret_text", value: $googleClientSecret },
+                    OPENAI_WORKER_URL: { type: "plain_text", value: $openaiWorkerUrl },
+                    VOICEVOX_API_URL: { type: "plain_text", value: $voicevoxApiUrl },
+                    VIDEO_RENDER_API_URL: { type: "plain_text", value: $videoRenderApiUrl },
+                    R2_ENDPOINT: { type: "secret_text", value: $r2Endpoint },
+                    R2_ACCESS_KEY_ID: { type: "secret_text", value: $r2AccessKeyId },
+                    R2_SECRET_ACCESS_KEY: { type: "secret_text", value: $r2SecretAccessKey },
+                    AWS_ACCESS_KEY_ID: { type: "secret_text", value: $awsAccessKeyId },
+                    AWS_SECRET_ACCESS_KEY: { type: "secret_text", value: $awsSecretAccessKey },
+                    NEXT_PUBLIC_SUPABASE_URL: { type: "plain_text", value: $supabaseUrl },
+                    NEXT_PUBLIC_SUPABASE_ANON_KEY: { type: "secret_text", value: $supabaseAnonKey },
+                    NEXT_PUBLIC_ROOT_URL: { type: "plain_text", value: $rootUrl }
+                  }
+                }
+              }
+            }' > /tmp/pages-env.json
+
+          curl -sS -X PATCH \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/ai-explanation-video" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data @/tmp/pages-env.json
+
+      - name: Build for Cloudflare Pages
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_ROOT_URL: ${{ secrets.NEXT_PUBLIC_ROOT_URL }}
+          GITHUB_CLIENT_ID: ${{ secrets.GITHUB_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.GITHUB_CLIENT_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+        run: npm run pages:build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy .vercel/output/static --project-name=ai-explanation-video --branch=main
