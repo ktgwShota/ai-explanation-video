@@ -22,28 +22,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build for Cloudflare Pages
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          NEXT_PUBLIC_ROOT_URL: ${{ secrets.NEXT_PUBLIC_ROOT_URL }}
-          GITHUB_CLIENT_ID: ${{ secrets.GH_CLIENT_ID }}
-          GITHUB_CLIENT_SECRET: ${{ secrets.GH_CLIENT_SECRET }}
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-        run: npm run pages:build
-
-      - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy .vercel/output/static --project-name=ai-explanation-video --branch=main
-
-      # NOTE: `wrangler pages deploy` は wrangler.jsonc の env.production.vars を基準に
-      # プロジェクトの plain_text 変数を上書きリセットする。そのため env 設定は
-      # 必ずデプロイの「後」に実行し、API で全変数を最終反映させる（runtime は project
-      # レベルの env_vars を参照するので、デプロイ後の適用でも稼働中の本番に反映される）。
+      # NOTE: env はデプロイ時にスナップショットされるため、必ずデプロイの「前」に設定する。
+      # さらに `wrangler pages deploy` は wrangler.jsonc に無い plain_text 変数を消すが
+      # secret_text は保持するため、API で入れる変数はすべて secret_text 型にしている
+      # （リポジトリは public なので URL や認証情報を wrangler.jsonc に平文で置けない）。
+      # 非機密の静的値（BASIC_AUTH_ENABLED / GEMINI_MODEL / NEXT_PUBLIC_API_URL）は
+      # wrangler.jsonc 側が所有する。
       - name: Configure production environment variables
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -91,27 +75,25 @@ jobs:
               deployment_configs: {
                 production: {
                   env_vars: {
-                    BASIC_AUTH_ENABLED: { type: "plain_text", value: "true" },
-                    BASIC_AUTH_USER: { type: "plain_text", value: $basicAuthUser },
+                    BASIC_AUTH_USER: { type: "secret_text", value: $basicAuthUser },
                     BASIC_AUTH_PASSWORD: { type: "secret_text", value: $basicAuthPassword },
-                    GEMINI_MODEL: { type: "plain_text", value: "gemini-2.5-flash" },
-                    AWS_REGION: { type: "plain_text", value: "us-east-1" },
+                    AWS_REGION: { type: "secret_text", value: "us-east-1" },
                     GOOGLE_API_KEY: { type: "secret_text", value: $googleApiKey },
-                    GITHUB_CLIENT_ID: { type: "plain_text", value: $githubClientId },
+                    GITHUB_CLIENT_ID: { type: "secret_text", value: $githubClientId },
                     GITHUB_CLIENT_SECRET: { type: "secret_text", value: $githubClientSecret },
-                    GOOGLE_CLIENT_ID: { type: "plain_text", value: $googleClientId },
+                    GOOGLE_CLIENT_ID: { type: "secret_text", value: $googleClientId },
                     GOOGLE_CLIENT_SECRET: { type: "secret_text", value: $googleClientSecret },
-                    OPENAI_WORKER_URL: { type: "plain_text", value: $openaiWorkerUrl },
-                    VOICEVOX_API_URL: { type: "plain_text", value: $voicevoxApiUrl },
-                    VIDEO_RENDER_API_URL: { type: "plain_text", value: $videoRenderApiUrl },
+                    OPENAI_WORKER_URL: { type: "secret_text", value: $openaiWorkerUrl },
+                    VOICEVOX_API_URL: { type: "secret_text", value: $voicevoxApiUrl },
+                    VIDEO_RENDER_API_URL: { type: "secret_text", value: $videoRenderApiUrl },
                     R2_ENDPOINT: { type: "secret_text", value: $r2Endpoint },
                     R2_ACCESS_KEY_ID: { type: "secret_text", value: $r2AccessKeyId },
                     R2_SECRET_ACCESS_KEY: { type: "secret_text", value: $r2SecretAccessKey },
                     AWS_ACCESS_KEY_ID: { type: "secret_text", value: $awsAccessKeyId },
                     AWS_SECRET_ACCESS_KEY: { type: "secret_text", value: $awsSecretAccessKey },
-                    NEXT_PUBLIC_SUPABASE_URL: { type: "plain_text", value: $supabaseUrl },
+                    NEXT_PUBLIC_SUPABASE_URL: { type: "secret_text", value: $supabaseUrl },
                     NEXT_PUBLIC_SUPABASE_ANON_KEY: { type: "secret_text", value: $supabaseAnonKey },
-                    NEXT_PUBLIC_ROOT_URL: { type: "plain_text", value: $rootUrl }
+                    NEXT_PUBLIC_ROOT_URL: { type: "secret_text", value: $rootUrl }
                   }
                 }
               }
@@ -129,3 +111,21 @@ jobs:
             echo "::error::Failed to apply production environment variables"
             exit 1
           fi
+
+      - name: Build for Cloudflare Pages
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_ROOT_URL: ${{ secrets.NEXT_PUBLIC_ROOT_URL }}
+          GITHUB_CLIENT_ID: ${{ secrets.GH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.GH_CLIENT_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+        run: npm run pages:build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy .vercel/output/static --project-name=ai-explanation-video --branch=main
